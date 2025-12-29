@@ -1,0 +1,147 @@
+#cell 2
+
+file_name = 'Processed_College_Feedback_Analysis.csv'
+try:
+    df = pd.read_csv(file_name, encoding='utf-8')
+except UnicodeDecodeError:
+    df = pd.read_csv(file_name, encoding='ISO-8859-1')
+
+df.columns = [col.strip() for col in df.columns]
+
+def parse_numeric(val):
+    try: return float(str(val).split('/')[0].strip())
+    except: return 0.0
+
+if 'Numeric_Rating' not in df.columns:
+    df['Numeric_Rating'] = df['Average/ Percentage'].apply(parse_numeric)
+
+
+
+#cell 2
+
+def generate_feedback(row):
+    q, r = row['Questions'], row['Numeric_Rating']
+    if r >= 4.0: return f"Excellent work on {q}. Very satisfied."
+    elif r >= 3.0: return f"The college is okay with {q}, but needs improvement."
+    else: return f"Unsatisfied with {q}. Action needed immediately."
+
+df['Feedback_Text'] = df.apply(generate_feedback, axis=1)
+df['Sentiment_Score'] = df['Feedback_Text'].apply(lambda x: TextBlob(x).sentiment.polarity)
+df['Sentiment_Type'] = df['Sentiment_Score'].apply(lambda x: 'Positive' if x > 0.1 else ('Negative' if x < -0.1 else 'Neutral'))
+
+print("Sentiment categorization complete.")
+
+
+
+
+#cell 3
+
+
+all_text = " ".join(df['Feedback_Text'].str.lower())
+words = re.findall(r'\w+', all_text)
+stop_words = {'the', 'and', 'was', 'were', 'with', 'this', 'that', 'for', 'from', 'student', 'college', 'very', 'work', 'excellent', 'institution', 'satisfied', 'performance', 'needs', 'okay', 'regarding', 'improvement'}
+meaningful_words = [w for w in words if len(w) > 3 and w not in stop_words]
+keyword_counts = Counter(meaningful_words).most_common(10)
+
+question_trends = df.groupby('Questions')['Numeric_Rating'].mean().reset_index()
+question_trends['Question_Index'] = range(1, len(question_trends) + 1)
+
+plt.figure(figsize=(20, 10))
+plt.subplot(1, 2, 1)
+keywords, counts = zip(*keyword_counts)
+sns.barplot(x=list(counts), y=list(keywords), palette='Spectral')
+plt.title('Top 10 Feedback Keywords', fontsize=16)
+
+plt.subplot(1, 2, 2)
+plt.plot(question_trends['Question_Index'], question_trends['Numeric_Rating'], marker='o', color='#2E8B57', linewidth=3)
+plt.fill_between(question_trends['Question_Index'], question_trends['Numeric_Rating'], color='#2E8B57', alpha=0.1)
+plt.title('Overall Satisfaction Trend', fontsize=16)
+plt.xlabel('Question Number')
+plt.ylabel('Average Rating')
+plt.show()
+
+
+
+#cell 4
+
+
+pivot_df = df.pivot_table(index='Questions', columns='Course Name', values='Numeric_Rating', aggfunc='mean')
+wrapped_labels = [textwrap.fill(q, width=50) for q in pivot_df.index]
+pivot_df.index = wrapped_labels
+
+plt.figure(figsize=(22, 28))
+sns.heatmap(pivot_df, cmap='RdYlGn', annot=True, fmt=".2f", linewidths=.5)
+plt.title('Detailed Performance Analysis Heatmap', fontsize=26, pad=30)
+plt.xticks(rotation=45, ha='right', fontsize=12)
+plt.yticks(fontsize=12)
+plt.tight_layout()
+plt.savefig('Final_Heatmap.png', dpi=300)
+plt.show()
+
+
+
+#cell 5
+
+print("--- PRIORITY IMPROVEMENT AREAS ---")
+bottom_3 = df.groupby('Questions')['Numeric_Rating'].mean().sort_values().head(3)
+for i, (q, s) in enumerate(bottom_3.items(), 1):
+    print(f"Priority {i}: {q} ({s:.2f}/5)")
+
+df.to_csv('Processed_College_Feedback_Final_v2.csv', index=False)
+
+#cell 6
+
+
+avg_by_course = df.groupby('Course Name')['Numeric_Rating'].mean()
+top_course = avg_by_course.idxmax()
+bottom_course = avg_by_course.idxmin()
+
+radar_df = df.pivot_table(index='Questions', columns='Course Name', values='Numeric_Rating')
+categories = [f"Q{i+1}" for i in range(len(radar_df))]
+values_top = radar_df[top_course].values.flatten().tolist()
+values_bottom = radar_df[bottom_course].values.flatten().tolist()
+
+values_top += values_top[:1]
+values_bottom += values_bottom[:1]
+angles = [n / float(len(categories)) * 2 * np.pi for n in range(len(categories))]
+angles += angles[:1]
+
+plt.figure(figsize=(10, 10))
+ax = plt.subplot(111, polar=True)
+plt.xticks(angles[:-1], categories, color='grey', size=10)
+
+ax.plot(angles, values_top, linewidth=2, linestyle='solid', label=top_course)
+ax.fill(angles, values_top, 'b', alpha=0.1)
+
+ax.plot(angles, values_bottom, linewidth=2, linestyle='solid', label=bottom_course)
+ax.fill(angles, values_bottom, 'r', alpha=0.1)
+
+plt.title(f'Comparison: {top_course} vs {bottom_course}', size=20, y=1.1)
+plt.legend(loc='upper right', bbox_to_anchor=(0.1, 0.1))
+plt.savefig('Radar_Comparison.png', dpi=300)
+plt.show()
+
+
+#cell 7
+
+
+plt.figure(figsize=(15, 8))
+ordered_courses = df.groupby('Course Name')['Numeric_Rating'].mean().sort_values().index
+sns.violinplot(x='Numeric_Rating', y='Course Name', data=df, order=ordered_courses, palette='coolwarm', inner='quartile')
+plt.title('Density and Distribution of Scores per Course', fontsize=18)
+plt.xlabel('Rating (1-5 Scale)', fontsize=14)
+plt.grid(axis='x', linestyle='--', alpha=0.7)
+plt.tight_layout()
+plt.savefig('Violin_Distribution.png', dpi=300)
+plt.show()
+
+#cell 8
+
+| Category | Key Finding (Data Evidence) | Suggested Improvement |
+| :--- | :--- | :--- |
+| **Teaching & Mentoring** | Scored **3.58/5.0** regarding emotional growth support. | Implement a structured "Mentor-Mentee" program. |
+| **Learning Infrastructure** | Low reported usage of ICT tools (**3.58/5.0**). | Modernize classrooms with smart boards. |
+| **Student Development** | Identifying strengths is below average (**3.62/5.0**). | Introduce competency-based assessments. |
+| **Industry Exposure** | Ratings for internships and field visits are low (**3.62/5.0**). | Sign MoUs with local industries for field trips. |
+| **Personalized Support** | Assisting with weaknesses received a score of **3.70/5.0**. | Develop a remedial coaching system. |
+| **Overall Satisfaction** | Top keywords: "Teachers," "Skills," and "Opportunities." | Focus resources on skill-based workshops. |
